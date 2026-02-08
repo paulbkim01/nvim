@@ -101,8 +101,7 @@ vim.g.have_nerd_font = false
 -- Make line numbers default
 vim.o.number = true
 -- You can also add relative line numbers, to help with jumping.
---  Experiment for yourself to see if you like it!
--- vim.o.relativenumber = true
+vim.o.relativenumber = true
 
 -- Enable mouse mode, can be useful for resizing splits for example!
 vim.o.mouse = 'a'
@@ -118,8 +117,13 @@ vim.schedule(function()
   vim.o.clipboard = 'unnamedplus'
 end)
 
--- Enable break indent
-vim.o.breakindent = true
+require('custom.wrapping').setup()
+
+-- Default to 4-space indentation unless overridden by filetype/plugins
+vim.o.tabstop = 4
+vim.o.shiftwidth = 4
+vim.o.softtabstop = 4
+vim.o.expandtab = true
 
 -- Save undo history
 vim.o.undofile = true
@@ -191,13 +195,13 @@ vim.keymap.set('t', '<Esc><Esc>', '<C-\\><C-n>', { desc = 'Exit terminal mode' }
 -- vim.keymap.set('n', '<down>', '<cmd>echo "Use j to move!!"<CR>')
 
 -- Keybinds to make split navigation easier.
---  Use CTRL+<hjkl> to switch between windows
+--  NOTE: <C-h/j/k/l> are managed by vim-tmux-navigator in this config.
 --
 --  See `:help wincmd` for a list of all window commands
-vim.keymap.set('n', '<C-h>', '<C-w><C-h>', { desc = 'Move focus to the left window' })
-vim.keymap.set('n', '<C-l>', '<C-w><C-l>', { desc = 'Move focus to the right window' })
-vim.keymap.set('n', '<C-j>', '<C-w><C-j>', { desc = 'Move focus to the lower window' })
-vim.keymap.set('n', '<C-k>', '<C-w><C-k>', { desc = 'Move focus to the upper window' })
+vim.keymap.set('n', '<leader>wh', '<C-w><C-h>', { desc = 'Move focus to the left window' })
+vim.keymap.set('n', '<leader>wl', '<C-w><C-l>', { desc = 'Move focus to the right window' })
+vim.keymap.set('n', '<leader>wj', '<C-w><C-j>', { desc = 'Move focus to the lower window' })
+vim.keymap.set('n', '<leader>wk', '<C-w><C-k>', { desc = 'Move focus to the upper window' })
 
 -- NOTE: Some terminals have colliding keymaps or are not able to send distinct keycodes
 -- vim.keymap.set("n", "<C-S-h>", "<C-w>H", { desc = "Move window to the left" })
@@ -216,6 +220,60 @@ vim.api.nvim_create_autocmd('TextYankPost', {
   group = vim.api.nvim_create_augroup('kickstart-highlight-yank', { clear = true }),
   callback = function()
     vim.hl.on_yank()
+  end,
+})
+
+local path_on_save_group = vim.api.nvim_create_augroup('kickstart-create-path-on-save', { clear = true })
+
+-- Only create paths inside these roots (defaults to current working directory).
+-- Add more roots as needed, e.g. vim.fn.expand '~/notes'
+local path_create_roots = {
+  vim.fn.getcwd(),
+}
+
+local is_in_allowed_root = function(path)
+  local abs_path = vim.fn.fnamemodify(path, ':p')
+  for _, root in ipairs(path_create_roots) do
+    local abs_root = vim.fn.fnamemodify(root, ':p')
+    if abs_path:sub(1, #abs_root) == abs_root then
+      return true
+    end
+  end
+  return false
+end
+
+local ensure_owner_rwx = function(path)
+  local perms = vim.fn.getfperm(path)
+  if perms ~= '' and perms:sub(1, 3) ~= 'rwx' then
+    vim.fn.setfperm(path, 'rwx' .. perms:sub(4))
+  end
+end
+
+vim.api.nvim_create_autocmd('BufWritePre', {
+  desc = 'Create missing parent directories on save',
+  group = path_on_save_group,
+  callback = function(args)
+    if vim.bo[args.buf].buftype ~= '' then
+      return
+    end
+
+    local file_path = vim.api.nvim_buf_get_name(args.buf)
+    if file_path == '' or file_path:match '^%w+://' then
+      return
+    end
+
+    local uv = vim.uv or vim.loop
+    local abs_path = vim.fn.fnamemodify(file_path, ':p')
+    if not is_in_allowed_root(abs_path) then
+      return
+    end
+
+    local parent = vim.fn.fnamemodify(abs_path, ':h')
+
+    if uv.fs_stat(parent) == nil then
+      vim.fn.mkdir(parent, 'p', '0700')
+    end
+    ensure_owner_rwx(parent)
   end,
 })
 
@@ -665,19 +723,44 @@ require('lazy').setup({
       --  - settings (table): Override the default settings passed when initializing the server.
       --        For example, to see the options for `lua_ls`, you could go to: https://luals.github.io/wiki/settings/
       local servers = {
-        -- clangd = {},
-        -- gopls = {},
-        -- pyright = {},
-        -- rust_analyzer = {},
-        -- ... etc. See `:help lspconfig-all` for a list of all the pre-configured LSPs
-        --
-        -- Some languages (like typescript) have entire language plugins that can be useful:
-        --    https://github.com/pmizio/typescript-tools.nvim
-        --
-        -- But for many setups, the LSP (`ts_ls`) will work just fine
-        -- ts_ls = {},
-        --
-
+        -- Languages
+        clangd = {},
+        gopls = {
+          settings = {
+            gopls = {
+              analyses = {
+                unusedparams = true,
+                shadow = true,
+              },
+              staticcheck = true,
+              gofumpt = true,
+            },
+          },
+        },
+        pyright = {
+          settings = {
+            python = {
+              analysis = {
+                typeCheckingMode = 'basic',
+                autoSearchPaths = true,
+                useLibraryCodeForTypes = true,
+              },
+            },
+          },
+        },
+        ruff = {},
+        rust_analyzer = {},
+        bashls = {},
+        awk_ls = {},
+        cssls = {},
+        htmx = {},
+        html = {},
+        jsonls = {},
+        yamlls = {},
+        taplo = {},
+        elixirls = {},
+        gh_actions_ls = {},
+        jqls = {},
         lua_ls = {
           -- cmd = { ... },
           -- filetypes = { ... },
@@ -692,6 +775,25 @@ require('lazy').setup({
             },
           },
         },
+        -- Tools
+        eslint = {},
+        astro = {},
+        tailwindcss = {},
+        docker_language_server = {},
+        docker_compose_language_service = {},
+        marksman = {},
+        postgres_lsp = {},
+        neocmake = {},
+        buf_ls = {},
+
+        -- ... etc. See `:help lspconfig-all` for a list of all the pre-configured LSPs
+        --
+        -- Some languages (like typescript) have entire language plugins that can be useful:
+        --    https://github.com/pmizio/typescript-tools.nvim
+        --
+        -- But for many setups, the LSP (`ts_ls`) will work just fine
+        -- ts_ls = {},
+        --
       }
       ---@type MasonLspconfigSettings
       ---@diagnostic disable-next-line: missing-fields
@@ -715,6 +817,7 @@ require('lazy').setup({
       local ensure_installed = vim.tbl_keys(servers or {})
       vim.list_extend(ensure_installed, {
         'stylua', -- Used to format Lua code
+        'markdownlint', -- Used by nvim-lint for Markdown buffers
       })
       require('mason-tool-installer').setup { ensure_installed = ensure_installed }
 
@@ -933,22 +1036,36 @@ require('lazy').setup({
   },
   { -- Highlight, edit, and navigate code
     'nvim-treesitter/nvim-treesitter',
+    lazy = false,
     build = ':TSUpdate',
-    main = 'nvim-treesitter.configs', -- Sets main module to use for opts
     -- [[ Configure Treesitter ]] See `:help nvim-treesitter`
     opts = {
       ensure_installed = { 'bash', 'c', 'diff', 'html', 'lua', 'luadoc', 'markdown', 'markdown_inline', 'query', 'vim', 'vimdoc' },
-      -- Autoinstall languages that are not installed
       auto_install = true,
-      highlight = {
-        enable = true,
-        -- Some languages depend on vim's regex highlighting system (such as Ruby) for indent rules.
-        --  If you are experiencing weird indenting issues, add the language to
-        --  the list of additional_vim_regex_highlighting and disabled languages for indent.
-        additional_vim_regex_highlighting = { 'ruby' },
-      },
-      indent = { enable = true, disable = { 'ruby' } },
     },
+    config = function(_, opts)
+      local ts = require 'nvim-treesitter'
+      ts.setup()
+
+      -- Install only parsers that are not already present to avoid repeated startup spam.
+      if opts.auto_install and opts.ensure_installed and #opts.ensure_installed > 0 then
+        local installed = ts.get_installed 'parsers'
+        local missing = vim.tbl_filter(function(lang)
+          return not vim.list_contains(installed, lang)
+        end, opts.ensure_installed)
+
+        if #missing > 0 then
+          ts.install(missing)
+        end
+      end
+
+      vim.api.nvim_create_autocmd('FileType', {
+        group = vim.api.nvim_create_augroup('kickstart-treesitter', { clear = true }),
+        callback = function()
+          pcall(vim.treesitter.start)
+        end,
+      })
+    end,
     -- There are additional nvim-treesitter modules that you can use to interact
     -- with nvim-treesitter. You should go explore a few and see what interests you:
     --
@@ -961,23 +1078,11 @@ require('lazy').setup({
   -- init.lua. If you want these files, they are in the repository, so you can just download them and
   -- place them in the correct locations.
 
-  -- NOTE: Next step on your Neovim journey: Add/Configure additional plugins for Kickstart
-  --
-  --  Here are some example plugins that I've included in the Kickstart repository.
-  --  Uncomment any of the lines below to enable them (you will need to restart nvim).
-  --
-  -- require 'kickstart.plugins.debug',
-  -- require 'kickstart.plugins.indent_line',
-  -- require 'kickstart.plugins.lint',
-  -- require 'kickstart.plugins.autopairs',
-  -- require 'kickstart.plugins.neo-tree',
-  -- require 'kickstart.plugins.gitsigns', -- adds gitsigns recommend keymaps
-
   -- NOTE: The import below can automatically add your own plugins, configuration, etc from `lua/custom/plugins/*.lua`
   --    This is the easiest way to modularize your config.
   --
   --  Uncomment the following line and add your plugins to `lua/custom/plugins/*.lua` to get going.
-  -- { import = 'custom.plugins' },
+  { import = 'custom.plugins' },
   --
   -- For additional information with loading, sourcing and examples see `:help lazy.nvim-🔌-plugin-spec`
   -- Or use telescope!
