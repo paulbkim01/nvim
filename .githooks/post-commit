@@ -1,0 +1,8 @@
+#!/bin/sh
+echo "→ Pushing to remote..."
+if git push; then
+  echo "✓ Push successful."
+else
+  echo "✗ Push failed. Run 'git push' manually to retry." >&2
+  exit 1
+fi

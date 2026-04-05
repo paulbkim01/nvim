@@ -5,4 +5,4 @@ nvim
 
 spell/
 lazy-lock.json
-.serena/
+.local

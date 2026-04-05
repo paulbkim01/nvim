@@ -84,6 +84,9 @@ I hope you enjoy your Neovim journey,
 P.S. You can delete this when you're done too. It's your config now! :)
 --]]
 
+-- Prepend mise shims to PATH so Mason/LSP can find node, go, etc.
+vim.env.PATH = vim.env.HOME .. '/.local/share/mise/shims:' .. vim.env.PATH
+
 -- Set <space> as the leader key
 -- See `:help mapleader`
 --  NOTE: Must happen before plugins are loaded (otherwise wrong leader will be used)
@@ -184,6 +187,26 @@ vim.keymap.set('n', ']d', function()
   vim.diagnostic.jump { count = 1, float = true }
 end, { desc = 'Go to next [D]iagnostic' })
 vim.keymap.set('n', '<leader>de', vim.diagnostic.open_float, { desc = 'Show [D]iagnostic [E]rror details' })
+vim.keymap.set('n', '<leader>dy', function()
+  local line = vim.api.nvim_win_get_cursor(0)[1]
+  local diagnostics = vim.diagnostic.get(0, { lnum = line - 1 })
+  if #diagnostics == 0 then
+    vim.notify('No diagnostics on this line', vim.log.levels.INFO)
+    return
+  end
+  local file_path = vim.api.nvim_buf_get_name(0)
+  local root = vim.fs.root(file_path, { '.git' }) or vim.fn.getcwd()
+  local prefix = root:match '/$' and root or (root .. '/')
+  local rel = file_path:sub(1, #prefix) == prefix and file_path:sub(#prefix + 1) or file_path
+  local parts = {}
+  for _, d in ipairs(diagnostics) do
+    table.insert(parts, string.format('@%s:%d: %s', rel, d.lnum + 1, d.message))
+  end
+  local result = table.concat(parts, '\n')
+  vim.fn.setreg('"', result)
+  pcall(vim.fn.setreg, '+', result)
+  vim.notify('Yanked ' .. #diagnostics .. ' diagnostic(s)', vim.log.levels.INFO)
+end, { desc = '[D]iagnostic [Y]ank to clipboard' })
 
 -- Exit terminal mode in the builtin terminal with a shortcut that is a bit easier
 -- for people to discover. Otherwise, you normally need to press <C-\><C-n>, which
@@ -1104,19 +1127,20 @@ require('lazy').setup({
     -- [[ Configure Treesitter ]] See `:help nvim-treesitter`
     config = function()
       local treesitter = require 'nvim-treesitter'
-      treesitter.setup()
-      require('nvim-treesitter.install').ensure_installed {
-        'bash',
-        'c',
-        'diff',
-        'html',
-        'lua',
-        'luadoc',
-        'markdown',
-        'markdown_inline',
-        'query',
-        'vim',
-        'vimdoc',
+      treesitter.setup {
+        ensure_installed = {
+          'bash',
+          'c',
+          'diff',
+          'html',
+          'lua',
+          'luadoc',
+          'markdown',
+          'markdown_inline',
+          'query',
+          'vim',
+          'vimdoc',
+        },
       }
 
       vim.api.nvim_create_autocmd('FileType', {
